@@ -5,7 +5,7 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import { tenableApiRequest, validateJSON } from './GenericFunctions';
+import { tenableApiRequest, tenableApiRequestAllItems, validateJSON } from './GenericFunctions';
 
 export class TenableOne implements INodeType {
 	description: INodeTypeDescription = {
@@ -132,6 +132,12 @@ export class TenableOne implements INodeType {
 					},
 				},
 				options: [
+					{
+						name: 'Get All Assets',
+						value: 'getAllAssets',
+						description: 'Get all assets from exposure management',
+						action: 'Get all assets',
+					},
 					{
 						name: 'Get Asset Properties',
 						value: 'getAssetProperties',
@@ -268,6 +274,79 @@ export class TenableOne implements INodeType {
 				},
 				default: '',
 				description: 'The ID of the exposure view card',
+			},
+
+			// Return All for Get All Assets
+			{
+				displayName: 'Return All',
+				name: 'returnAll',
+				type: 'boolean',
+				displayOptions: {
+					show: {
+						resource: ['inventory'],
+						operation: ['getAllAssets'],
+					},
+				},
+				default: false,
+				description: 'Whether to return all results or only up to a given limit',
+			},
+
+			// Limit for Get All Assets
+			{
+				displayName: 'Limit',
+				name: 'limit',
+				type: 'number',
+				displayOptions: {
+					show: {
+						resource: ['inventory'],
+						operation: ['getAllAssets'],
+						returnAll: [false],
+					},
+				},
+				typeOptions: {
+					minValue: 1,
+					maxValue: 1000,
+				},
+				default: 100,
+				description: 'Max number of results to return',
+			},
+
+			// Options for Get All Assets
+			{
+				displayName: 'Options',
+				name: 'getAllAssetsOptions',
+				type: 'collection',
+				placeholder: 'Add Option',
+				default: {},
+				displayOptions: {
+					show: {
+						resource: ['inventory'],
+						operation: ['getAllAssets'],
+					},
+				},
+				options: [
+					{
+						displayName: 'Extra Properties',
+						name: 'extra_properties',
+						type: 'string',
+						default: '',
+						description: 'Comma-separated list of extra properties to include in the response',
+					},
+					{
+						displayName: 'Filters (JSON)',
+						name: 'filters',
+						type: 'string',
+						default: '',
+						description: 'JSON array of filter objects. Each filter has "property", "operator", and "value" fields.',
+					},
+					{
+						displayName: 'Sort',
+						name: 'sort',
+						type: 'string',
+						default: '',
+						description: 'Sort results by property:direction (e.g., "aes:desc")',
+					},
+				],
 			},
 
 			// Search Query Mode
@@ -584,6 +663,49 @@ export class TenableOne implements INodeType {
 							'GET',
 							'/api/v1/t1/inventory/software/properties',
 						)) as IDataObject;
+					}
+
+					if (operation === 'getAllAssets') {
+						const returnAll = this.getNodeParameter('returnAll', i) as boolean;
+						const options = this.getNodeParameter('getAllAssetsOptions', i) as IDataObject;
+
+						const body: IDataObject = {};
+						const qs: IDataObject = {};
+
+						// Handle optional filters
+						if (options.filters) {
+							const filters = validateJSON(options.filters as string);
+							if (filters) {
+								body.filters = filters;
+							}
+						}
+
+						// Handle query string options
+						if (options.sort) qs.sort = options.sort;
+						if (options.extra_properties) qs.extra_properties = options.extra_properties;
+
+						if (returnAll) {
+							// Fetch all assets with pagination
+							responseData = await tenableApiRequestAllItems.call(
+								this,
+								'POST',
+								'/api/v1/t1/inventory/assets/search',
+								'items',
+								body,
+								qs,
+							);
+						} else {
+							// Fetch limited results
+							const limit = this.getNodeParameter('limit', i) as number;
+							qs.limit = limit;
+							responseData = (await tenableApiRequest.call(
+								this,
+								'POST',
+								'/api/v1/t1/inventory/assets/search',
+								body,
+								qs,
+							)) as IDataObject;
+						}
 					}
 
 					if (
