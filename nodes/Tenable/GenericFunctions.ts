@@ -22,16 +22,17 @@ export async function tenableApiRequest(
 		url: `${credentials.baseUrl}${endpoint}`,
 		headers: {
 			'Accept': 'application/json',
-			'Content-Type': 'application/json',
 		},
 		qs,
-		body,
-		json: true,
 	};
 
-	// Only remove body for GET requests - POST/PUT requests may need empty body
-	if (Object.keys(body).length === 0 && method === 'GET') {
-		delete options.body;
+	// For non-GET requests, always send JSON body (even if empty)
+	if (method !== 'GET') {
+		options.body = JSON.stringify(body);
+		options.headers = {
+			...options.headers,
+			'Content-Type': 'application/json',
+		};
 	}
 
 	if (Object.keys(qs).length === 0) {
