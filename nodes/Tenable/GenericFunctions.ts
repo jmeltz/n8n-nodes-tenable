@@ -29,7 +29,8 @@ export async function tenableApiRequest(
 		json: true,
 	};
 
-	if (Object.keys(body).length === 0) {
+	// Only remove body for GET requests - POST/PUT requests may need empty body
+	if (Object.keys(body).length === 0 && method === 'GET') {
 		delete options.body;
 	}
 
