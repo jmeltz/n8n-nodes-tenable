@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-tenable",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "n8n nodes for Tenable Vulnerability Management and Tenable One APIs",
   "keywords": [
     "n8n-community-node-package",
