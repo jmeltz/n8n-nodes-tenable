@@ -133,10 +133,10 @@ export class TenableOne implements INodeType {
 				},
 				options: [
 					{
-						name: 'Get All Assets',
-						value: 'getAllAssets',
-						description: 'Get all assets from exposure management',
-						action: 'Get all assets',
+						name: 'Get Asset',
+						value: 'getAsset',
+						description: 'Get a single asset by ID from CAM API',
+						action: 'Get asset',
 					},
 					{
 						name: 'Get Asset Properties',
@@ -276,7 +276,23 @@ export class TenableOne implements INodeType {
 				description: 'The ID of the exposure view card',
 			},
 
-			// Return All for Get All Assets
+			// Asset ID for Get Asset
+			{
+				displayName: 'Asset ID',
+				name: 'assetId',
+				type: 'string',
+				required: true,
+				displayOptions: {
+					show: {
+						resource: ['inventory'],
+						operation: ['getAsset'],
+					},
+				},
+				default: '',
+				description: 'The asset UUID (e.g., from Search Assets results)',
+			},
+
+			// Return All for Search Assets
 			{
 				displayName: 'Return All',
 				name: 'returnAll',
@@ -284,69 +300,11 @@ export class TenableOne implements INodeType {
 				displayOptions: {
 					show: {
 						resource: ['inventory'],
-						operation: ['getAllAssets'],
+						operation: ['searchAssets', 'searchFindings', 'searchSoftware'],
 					},
 				},
 				default: false,
-				description: 'Whether to return all results or only up to a given limit',
-			},
-
-			// Limit for Get All Assets
-			{
-				displayName: 'Limit',
-				name: 'limit',
-				type: 'number',
-				displayOptions: {
-					show: {
-						resource: ['inventory'],
-						operation: ['getAllAssets'],
-						returnAll: [false],
-					},
-				},
-				typeOptions: {
-					minValue: 1,
-					maxValue: 1000,
-				},
-				default: 100,
-				description: 'Max number of results to return',
-			},
-
-			// Options for Get All Assets
-			{
-				displayName: 'Options',
-				name: 'getAllAssetsOptions',
-				type: 'collection',
-				placeholder: 'Add Option',
-				default: {},
-				displayOptions: {
-					show: {
-						resource: ['inventory'],
-						operation: ['getAllAssets'],
-					},
-				},
-				options: [
-					{
-						displayName: 'Extra Properties',
-						name: 'extra_properties',
-						type: 'string',
-						default: '',
-						description: 'Comma-separated list of extra properties to include in the response',
-					},
-					{
-						displayName: 'Filters (JSON)',
-						name: 'filters',
-						type: 'string',
-						default: '',
-						description: 'JSON array of filter objects. Each filter has "property", "operator", and "value" fields.',
-					},
-					{
-						displayName: 'Sort',
-						name: 'sort',
-						type: 'string',
-						default: '',
-						description: 'Sort results by property:direction (e.g., "aes:desc")',
-					},
-				],
+				description: 'Whether to return all results or only up to a given limit (auto-paginates)',
 			},
 
 			// Search Query Mode
@@ -665,47 +623,13 @@ export class TenableOne implements INodeType {
 						)) as IDataObject;
 					}
 
-					if (operation === 'getAllAssets') {
-						const returnAll = this.getNodeParameter('returnAll', i) as boolean;
-						const options = this.getNodeParameter('getAllAssetsOptions', i) as IDataObject;
-
-						const body: IDataObject = {};
-						const qs: IDataObject = {};
-
-						// Handle optional filters
-						if (options.filters) {
-							const filters = validateJSON(options.filters as string);
-							if (filters) {
-								body.filters = filters;
-							}
-						}
-
-						// Handle query string options
-						if (options.sort) qs.sort = options.sort;
-						if (options.extra_properties) qs.extra_properties = options.extra_properties;
-
-						if (returnAll) {
-							// Fetch all assets with pagination
-							responseData = await tenableApiRequestAllItems.call(
-								this,
-								'POST',
-								'/api/v1/t1/inventory/assets/search',
-								'items',
-								body,
-								qs,
-							);
-						} else {
-							// Fetch limited results
-							const limit = this.getNodeParameter('limit', i) as number;
-							qs.limit = limit;
-							responseData = (await tenableApiRequest.call(
-								this,
-								'POST',
-								'/api/v1/t1/inventory/assets/search',
-								body,
-								qs,
-							)) as IDataObject;
-						}
+					if (operation === 'getAsset') {
+						const assetId = this.getNodeParameter('assetId', i) as string;
+						responseData = (await tenableApiRequest.call(
+							this,
+							'GET',
+							`/one/cam/v1/assets/${assetId}`,
+						)) as IDataObject;
 					}
 
 					if (
@@ -713,6 +637,7 @@ export class TenableOne implements INodeType {
 						operation === 'searchFindings' ||
 						operation === 'searchSoftware'
 					) {
+						const returnAll = this.getNodeParameter('returnAll', i) as boolean;
 						const queryMode = this.getNodeParameter('queryMode', i) as string;
 						const queryText = this.getNodeParameter('queryText', i) as string;
 						const filtersJson = String(this.getNodeParameter('filters', i) || '');
@@ -734,12 +659,6 @@ export class TenableOne implements INodeType {
 							}
 						}
 
-						const qs: IDataObject = {};
-						if (options.limit) qs.limit = options.limit;
-						if (options.offset) qs.offset = options.offset;
-						if (options.sort) qs.sort = options.sort;
-						if (options.extra_properties) qs.extra_properties = options.extra_properties;
-
 						let endpoint = '/api/v1/t1/inventory/assets/search';
 						if (operation === 'searchFindings') {
 							endpoint = '/api/v1/t1/inventory/findings/search';
@@ -747,13 +666,36 @@ export class TenableOne implements INodeType {
 							endpoint = '/api/v1/t1/inventory/software/search';
 						}
 
-						responseData = (await tenableApiRequest.call(
-							this,
-							'POST',
-							endpoint,
-							body,
-							qs,
-						)) as IDataObject;
+						if (returnAll) {
+							// Auto-paginate to get all results
+							const qs: IDataObject = {};
+							if (options.sort) qs.sort = options.sort;
+							if (options.extra_properties) qs.extra_properties = options.extra_properties;
+
+							responseData = await tenableApiRequestAllItems.call(
+								this,
+								'POST',
+								endpoint,
+								'items',
+								body,
+								qs,
+							);
+						} else {
+							// Single request with optional limit/offset
+							const qs: IDataObject = {};
+							if (options.limit) qs.limit = options.limit;
+							if (options.offset) qs.offset = options.offset;
+							if (options.sort) qs.sort = options.sort;
+							if (options.extra_properties) qs.extra_properties = options.extra_properties;
+
+							responseData = (await tenableApiRequest.call(
+								this,
+								'POST',
+								endpoint,
+								body,
+								qs,
+							)) as IDataObject;
+						}
 					}
 				}
 
